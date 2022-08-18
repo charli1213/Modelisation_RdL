@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# --- Importation des modules nécessaires :
 import matplotlib.pyplot as plt
 
 import cartopy.crs as ccrs
