@@ -8,6 +8,7 @@ dependencies:
 - xugrid
 - cartopy
 - ipython
+- pip
 - pip:
   - Progress
   - rioxarray

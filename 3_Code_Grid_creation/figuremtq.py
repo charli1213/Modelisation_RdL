@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 
 # Opening netcdf with grid.
 filename = "xr_grille.nc"
-ds1 = xr.open_dataset("xr_unrefined_grid.nc")
-ds2 = xr.open_dataset("xr_refined_grid.nc")
+path = '../5_Donnees_sortantes/'
+ds1 = xr.open_dataset(path + "xr_unrefined_grid.nc")
+ds2 = xr.open_dataset(path + "xr_refined_grid.nc")
 uds1 = xu.UgridDataset(ds1)
 uds2 = xu.UgridDataset(ds2)
 
@@ -47,11 +48,12 @@ axes[0,1].add_image(request, 16)
 axes[1,0].add_image(request, 16)
 
 # --- Opening CSV file with sample datapoints :
-datapoint_filename = 'gridcoastline6.csv'
+input_path = '../2_Donnees_entrantes/Polygone_domaine_grille/'
+datapoint_filename = input_path + 'domaine_grille6.csv'
 df = pd.read_csv(datapoint_filename,
                  header=0,
                  index_col=0, sep=",")
-dfgrid = pd.read_csv("grid_domain.csv",
+dfgrid = pd.read_csv(path + "nouveau_domaine_grille.csv",
                  header=0,
                  index_col=0, sep=",")
 

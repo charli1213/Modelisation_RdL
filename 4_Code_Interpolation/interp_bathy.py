@@ -1,26 +1,29 @@
-# --- Importation des modules
+# ==== IMPORTATION DES MODULES ====
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
+from scipy.interpolate import griddata
 
 # --- Importation pour les cartes
 import cartopy.crs as ccrs
 import cartopy._epsg as cepsg
-from cartopy.feature import NaturalEarthFeature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import pandas as pd
+from pylab import *
 
-
-
-
-
+# ==== OUVERTURES DES DONNÉES TOPOBATHYMÉTRIQUES ====
 # On ouvre la topobathy de drones sous forme NetCDF
 ds = xr.open_dataset('../5_Donnees_sortantes/topobathy_drone.nc')
 xlen = len(ds.x)
 ylen = len(ds.y)
 nz = 10
-band_data = ds.sel(band=1).isel(x=slice(0,xlen,nz),
-                                y=slice(0,ylen,nz)).band_data
+temp_ds = ds.isel(x=slice(0,xlen,nz),
+                  y=slice(0,ylen,nz)).sel(band=1).rename({'band_data':'CGVD28'})
+del temp_ds['band']
+drone_dA = temp_ds.CGVD28.rename({'x':'Easting',
+                                   'y':'Northing'}).stack(ID=('Easting','Northing'))
+
+### Ici ça bugg...
 
 
 # On ouvre les données de l'hydrobole sous forme CSV
@@ -52,10 +55,10 @@ nonna_ds = nonna_ds.set_index(ID = ['Easting','Northing'])
 nonna_ds['CGVD28'] = nonna_ds['Depth CGVD28']
 nonna_dA = nonna_ds['CGVD28']
 
-# On fusionne tous les DataArrays : 
+# On fusionne les DataArrays de l'hydrobole et du Nonna : 
 da = xr.concat([hydro_dA, nonna_dA], 'ID')
 
-# Limite des données du NONNA :
+# On limite les frontières de nos données :
 lonmin = -69.58
 lonmax = -69.55
 latmin = 47.82
@@ -64,32 +67,55 @@ latmax = 47.86
 da = da.where(da.longitude<lonmax).where(da.longitude>lonmin)
 da = da.where(da.latitude<latmax).where(da.latitude>latmin).dropna('ID')
 
-# === Creation de la figure : 
-fig,axes = plt.subplots(subplot_kw=dict(projection=ccrs.Orthographic(-60,47)))
-  
-gl = axes.gridlines(draw_labels=True, linestyle = ':',color='k')
-gl.top_labels = gl.right_labels = False
+# On fusionne finalement toutes les données ensembles.
+da = da.drop(['longitude','latitude'])
+da = xr.concat([da,drone_dA],'ID').dropna('ID')
 
-# Plotting Drone ::
-crs = cepsg._EPSGProjection(32187) # Projection MTM7
+# ==== Interpolation ====
+# [X] 1. Tout fusionner avec un multiindex 
+# [X] - Pas de lon/lat pour le drone...
+
+y = np.linspace(da.Northing.min(),da.Northing.max(),1000)
+x = np.linspace(da.Easting.min(),da.Easting.max(),1000)
+
+X,Y = np.meshgrid(x,y)
+gridz = griddata(list(zip(da.Easting.values,
+                          da.Northing.values)),
+                 da.values, (X,Y),
+                 method='nearest')
+
+
+# ==== CREATION DE LA FIGURE ====
+figsize = (15,8)
+fig,axes = plt.subplots(1,2,figsize=figsize,
+                        subplot_kw=dict(projection=ccrs.Orthographic(-60,47)))
+crs = cepsg._EPSGProjection(32187) # Projection MTM7  
+gl0 = axes[0].gridlines(draw_labels=True, linestyle = ':',color='k')
+gl1 = axes[1].gridlines(draw_labels=True, linestyle = ':',color='k')
+gl0.top_labels = gl0.right_labels = False
+gl1.top_labels = gl1.right_labels = False
+cmap = cm.get_cmap('bwr', 20) # Colormap
+
+# Colormap limits : 
 absval = max(abs(da.min()),abs(da.max()))
-bandplot = band_data.plot(ax=axes, cmap='coolwarm', transform=crs,
-                          vmin = -absval, vmax=absval,)
 
+# Plotting/Scatter of all point values :
+im0 = axes[0].scatter(da.Easting,
+                      da.Northing,
+                      c=da.values,
+                      transform = crs,
+                      vmin = -absval, vmax=absval,
+                      cmap=cmap)
 
-# Plotting Hydrobole et Nonna ::
-axes.scatter(da.Easting,
-             da.Northing,
-             c=da.values,
-             transform = crs,
-             vmin = -absval, vmax=absval,
-             cmap='coolwarm')
+# Plotting interpolation : 
+im1 = axes[1].pcolormesh(X,Y,gridz,
+                         cmap=cmap,
+                         transform = crs,
+                         vmin = -absval, vmax=absval)
 
-
-# Coastline
-coast = NaturalEarthFeature(category='physical', scale='10m',
-                            facecolor='none', name='coastline')
-axes.add_feature(coast, edgecolor='gray')
-
-plt.tight_layout()
-plt.show()
+# Fine tunning
+# Colorbar
+cbar = fig.colorbar(im1, ax=axes[1])
+cbar.ax.set_ylabel('Altitude [m]', rotation=270)
+fig.tight_layout()
+fig.show()
