@@ -7,3 +7,5 @@
 5_Donnees_sortantes/topobathy_drone.nc
 5_Donnees_sortantes/xr_refined_grid.nc
 5_Donnees_sortantes/xr_unrefined_grid.nc
+2_Donnees_entrantes/*
+5_Donnees_sortantes/*
