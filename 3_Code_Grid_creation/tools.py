@@ -1,71 +1,61 @@
 import numpy as np
 
 # ====== Gridmaking fonctions  ========
-def create_maps(xpos,ypos) :
-    "gets you a vector with the position of each nodes (maps)"
-    nx = xpos.shape[1]
-    ny = xpos.shape[0]
-    maps = np.zeros(xpos.shape)
-    inode = 0
-    for j in range(ny) :
-        for i in range(nx) :
-            maps[j,i] = int(inode)
-            inode += 1
-    return maps
-# -------------------------------
-
-def get_mapping(maps, xpos, ypos) :
-    """Get you a dictionary containing the position of each nodes (mapping).
-    The output has the form {node_number: (xcoord,ycoord)}.
-    IN ::
-    - maps (np.array) : a mxn matrix containing the id number of each nodes. 
-    - xpos, ypos (np.array) : xcoord and ycoord positions of each nodes. 
-    OUT :: 
-    - mapping (dict) : mapping of the shape {node_number: (xcoord,ycoord)}.
-    """
-    return {i:(j,k) for i,j,k in zip(maps.flatten(),
-                                     xpos.flatten(),
-                                     ypos.flatten())}
 
 # -------------------------------
-def extract_shapes(maps) :
-    """ Extract shapes from maps (vector), since curvilinear."""
-    nx = maps.shape[1]
-    ny = maps.shape[0]
-    shapes = {}
-    ishape = 0
+"""
+def extract_faces(maps) :
+#     Extract shapes from a (nx x ny) node ID matrix, since curvilinear.
+#    And create à (nx,ny,4) vector which contains the mapping.
+    nx,ny = maps.shape
+    shape_array = np.empty((nx-1,ny-1,4))
     for j in range(ny-1) :
         for i in range(nx-1) :
-            shapes[ishape] = [maps[j,i],
-                             maps[j,i+1],
-                             maps[j+1,i+1],
-                             maps[j+1,i]]
-            ishape += 1
-    return shapes
+            shape_array[i,j,:] = np.array([maps[i,j],
+                                           maps[i,j+1],
+                                           maps[i+1,j+1],
+                                           maps[i+1,j]])
+    return shape_array
+"""
+# -------------------------------
+def extract_faces(grid) :
+    """ 
+    Cette fonction prend une grille et assigne les 'faces' à 4 noeuds.
+    Pour se faire, on crée premièrement une 'map' des noeuds, soit une
+    matrice ny x nx qui contient la liste des noeuds actif (int) et des
+    noeuds inactifs (nan). 
+
+    Ensuite, on crée une 'map' des faces, soit une matrice (ny-1) x (nx-1)
+    qui contient 4 noeuds, soit les neouds associés aux faces.
+    """
+    
+    mask = grid.y.mask
+    grid_shape = grid.y.mask.shape
+    nodes_map = np.empty(grid_shape)
+
+    # --- Création des la 'map' des noeuds :
+    id = 0
+    for i in range(grid_shape[0]) :
+        for j in range(grid_shape[1]) :
+            if mask[i,j] == False :
+                nodes_map[i,j] = id
+                id += 1
+            else :
+                nodes_map[i,j] = np.nan
+
+    # --- Création des la 'map' des faces :
+    ny, nx = grid_shape
+    faces_map = np.empty((ny-1,nx-1,4))
+    for j in range(ny-1) :
+        for i in range(nx-1) :
+            faces_map[j,i,:] = np.array([nodes_map[j,i],
+                                         nodes_map[j,i+1],
+                                         nodes_map[j+1,i+1],
+                                         nodes_map[j+1,i]])
+            
+    # --- On exporte la 'map' des noeuds et la 'map' des faces : 
+    return nodes_map, faces_map
+    
+
 # -------------------------------
 
-def degree_to_km(deg_array, meanlat) :
-    """ Function which convert degree array into kilometer array on 
-    the earth, assuming a mean latitude (meanlat [degrees]) for our
-    new (x,y) plane. For converting latitude, just assume 
-    meanlat = 0 [deg]. 
-    (IN) deg_array [np.array] : our vector in degree.
-    (IN) meanlat [float] : The mean latitude to evaluate our angles.
-    (OUT) km_array [np.array] : The converted vector in km."""
-    cearth = 40075 # [KM]
-    return deg_array*(np.cos(2*np.pi*(meanlat/360))*(cearth/360))
-
-# -------------------------------
-
-def km_to_degree(km_array, meanlat) :
-    """ Function which convert kilometer array into degree array on 
-    the earth, assuming a mean latitude (meanlat [degrees]) for our
-    new (x,y) plane. For converting latitude, just assume 
-    meanlat = 0 [deg].
-    (IN) km_array [np.array] : our vector in km.
-    (IN) meanlat [float] : The mean latitude to evaluate our angles.
-    (OUT) deg_array [np.array] : The converted vector in degrees."""
-    cearth = 40075 # [KM]
-    return km_array/(np.cos(2*np.pi*(meanlat/360))*(cearth/360))
-
-# -------------------------------

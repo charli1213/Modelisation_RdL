@@ -9,3 +9,10 @@
 5_Donnees_sortantes/xr_unrefined_grid.nc
 2_Donnees_entrantes/*
 5_Donnees_sortantes/*
+
+3_Code_Grid_creation/Grilles_finale/*
+4_Code_Interpolation/Topobathymetrie_finale/*
+en_clim*
+parametres_vagues_bouée_RDL.mat
+RDL_TIDE_1980_2022.mat
+CSV_Delft3D_Inputs/*

@@ -2,53 +2,49 @@
 # --- Modules de base
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import matplotlib as mpl
 plt.rc('axes', axisbelow=True)
 import xarray as xr
 from scipy.interpolate import griddata
 # --- Importation pour les cartes
 import cartopy.crs as ccrs
-import cartopy._epsg as cepsg
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import pandas as pd
 from pylab import *
+import cartopy.io.img_tiles as cimgt
+request = cimgt.GoogleTiles(style='satellite')
 # --- Transformations de coordonnées :
+import cartopy._epsg as cepsg
 from pyproj import Transformer
 # --- Importation de GeoPandas pour les cartes :
 from shapely.geometry import Point, Polygon, MultiPoint
 import geopandas as gpd
 
 
-
 # ==== CREATION DES SYSTÈMES DE COORDONNÉES ====
 MTM7crs  = cepsg._EPSGProjection(32187)   # Projection MTM7
-UTM19crs = cepsg._EPSGProjection(32619)   # Projection UTM19N
 PlateCarree = ccrs.PlateCarree()         # Projection Mercator
 Orthographic = ccrs.Orthographic(-60,47) # Projection Orthographique
-transformer1 = Transformer.from_crs(PlateCarree,MTM7crs)
-transformer2 = Transformer.from_crs(UTM19crs,MTM7crs)
-
+transformer_toMTM = Transformer.from_crs(PlateCarree,MTM7crs)
 
 
 
 # ==== CRÉATION GRILLE SOUS-JACENTE À L'INTERPOLATION ====
-# 1. Limites : 
-lonmin = -69.58
-lonmax = -69.545
-latmin = 47.82
-latmax = 47.86
+# --- Limites
+lonmin = -69.580
+lonmax = -69.546
+latmin =  47.825
+latmax =  47.860
 extent = [lonmin, lonmax, latmin, latmax]
-# Limites en mtm7
-xmin,ymin = transformer1.transform(lonmin,latmin)
-xmax,ymax = transformer1.transform(lonmax,latmax)
 
-# 2. Creation d'une meshgrid général pour l'interpolation.
-nxinterp = 1000
-nyinterp = 2000
-xdomain = np.linspace(xmin,xmax,nxinterp)
-ydomain = np.linspace(ymin,ymax,nyinterp)
+# Tranformation des limites en MTM7
+xmin,ymin = transformer_toMTM.transform(lonmin,latmin)
+xmax,ymax = transformer_toMTM.transform(lonmax,latmax)
+
+# Création meshgrid sous-tendant l'interpolation : 
+xdomain = np.linspace(int(xmin),int(xmax),2*(int(xmax)-int(xmin))+1)
+ydomain = np.linspace(int(ymin),int(ymax),2*(int(ymax)-int(ymin))+1)
 X,Y = np.meshgrid(xdomain,ydomain,indexing='ij')
-
 
 
 
@@ -64,7 +60,6 @@ def sharpening_ds(ds, nz=1) :
     """
     xlen = len(ds.x)
     ylen = len(ds.y)
-    nz = 15
     temp_ds = ds.isel(x=slice(0,xlen,nz),
                       y=slice(0,ylen,nz)).sel(band=1).rename({'band_data':'CGVD28'})
     out_da = temp_ds.CGVD28.rename({'x':'Easting',
@@ -74,9 +69,9 @@ def sharpening_ds(ds, nz=1) :
 # ---
 
 # ---
-polygon_path  = "/home/charles-edouard/Desktop/Traitement_RdL/2_Donnees_entrantes/"
+polygon_path  = "../2_Donnees_entrantes/"
 
-def extract_polygon(da,shapefile = polygon_path + 'Trait_de_cote_pointe_RdL/Polygone_LIDAR_pointe_de_RdL.shp') :
+def extract_polygon(da, shapefile = polygon_path + 'Trait_de_cote_pointe_RdL/Polygone_LIDAR_pointe_de_RdL.shp') :
     """
     Cette fonction prend comme entrée un xarray.dataArray et un shapely polygone.
     Le but de cette fontion est d'extraire tous les points à L'EXTÉRIEUR de ce 
@@ -158,35 +153,45 @@ def debiaisage(da_fiable, da_biaise,
                           (xy_intersection[:,0],xy_intersection[:,1]),
                           method=method)
 
-    # Calcul du biais moyen : 
+    # Calcul du biais :
     biais = da_biaise[indices] - ref_interp
     biais_moyen = float(np.mean(biais))
     print(texte, 'Moyenne :', biais_moyen)
 
     # Figure
-    fig, axes = plt.subplots(nrows=1, ncols=2,figsize = (12,7))
+    fig, axes = plt.subplots(nrows=1, ncols=2,figsize = (10,5.2))
+    axes[0].remove()
+    axes[0] = fig.add_subplot(1,2, 1, projection=Orthographic, aspect=1)
+    gl0 = axes[0].gridlines(draw_labels=True, linestyle = ':',color='k',zorder=1,linewidth=0.4)
+    gl0.top_labels = gl0.right_labels = False
+    gl0.ylabel_style = {'rotation': 90}
+
     bin_seq = np.linspace(-0.5,0.5,int(1/res+1))
     n, bin, patches = axes[1].hist(biais, facecolor='orange', edgecolor='white', alpha=0.7,
                                    bins=bin_seq)
+    
     mode = round(bin[n.argmax()] + res/2, 3)
     print('Mode :', mode, '({})'.format(str(mode)))
-    axes[0].fill(xcontour,ycontour,color='orange',alpha=0.7,label = 'Polygone\néchantillon\nde référence')
+    axes[0].fill(xcontour,ycontour,color='orange',alpha=0.8,label = 'Polygone échantillon\nde référence', transform = MTM7crs,zorder=2)
     image_biais = axes[0].scatter(xy_intersection[:,0],xy_intersection[:,1],
-                                  c=biais, cmap=cmap,vmin=-1,vmax=1,s=4)
-    cbar = plt.colorbar(cm.ScalarMappable(norm=image_biais.norm, cmap=cmap),
+                                  c=biais, cmap=cmap,vmin=-1,vmax=1,s=4, transform=MTM7crs, zorder = 3)
+    axes[0].add_image(request, 16, alpha=0.45)
+    cbar = plt.colorbar(mpl.cm.ScalarMappable(norm=image_biais.norm, cmap=cmap),
                         ax=axes[0], extend='both',
-                        label = "Mesure du biais (Échantillon biaisé) [m]")
+                        label = "Biais échantillon biaisé (m)")
     [ax.grid() for ax in axes]
     axes[0].set_title("Biais par rapport au jeu de\n données de référence")
     axes[1].set_title('Histograme du biais pour des\nintervalles de {} cm'.format(100*res))
-    axes[0].set_xlabel('Easting [m]')
-    axes[0].set_ylabel('Northing [m]')
-    axes[1].set_xlabel("Biais mesuré dans la zone d'intersection [m]")
-    axes[1].set_ylabel('Nombre de récurences pour le biais [-]')
-    axes[0].legend(loc='best')
+    axes[0].set_xlabel('Easting (m)')
+    axes[0].set_ylabel('Northing (m)')
+    axes[1].set_xlabel("Biais mesuré dans la zone d'intersection (m)")
+    axes[1].set_ylabel('Nombre de récurences pour le biais (-)')
+    axes[0].legend(loc='upper left', frameon = False, labelcolor = 'white')
+    for axe in axes :
+        axe.set_axisbelow(True)
     plt.tight_layout()
-    plt.show()
-    #plt.close()
+    #plt.show()
+    plt.close()
     # Fin 
     return mode
 # ---
@@ -198,10 +203,11 @@ def debiaisage(da_fiable, da_biaise,
 
 # 1. On ouvre la topobathy de drones (format NetCDF) (1/10 de résolution) :
 print('1 :: Ouverture Topobathy par drones')
-ds = xr.open_dataset('../5_Donnees_sortantes/Netcdf/topobathymetrie_drone.nc')
+#ds = xr.open_dataset('../5_Donnees_sortantes/Netcdf/topobathymetrie_drone.nc')
+ds = xr.open_dataset('../2_Donnees_entrantes/Topobathy_drone/Netcdf/topobathymetrie_drone.nc')
 drone_spatial_ref = ds.spatial_ref # Utile plus tard pour la création du netcdf.
-drone_da = sharpening_ds(ds,nz=15)
-del ds 
+drone_da = sharpening_ds(ds,nz=10)
+del ds
 
 
 # 2. On ouvre les données de l'hydrobole (format CSV) :
@@ -222,8 +228,15 @@ hydro_da = hydro_ds['CGVD28'].drop(['longitude','latitude'])
 del hydro_ds
 
 
-# 3.a) On ouvre les données du NONNA (Format CSV) :
+# 3 On ouvre les données du NONNA (Format CSV) :
 print('3 :: Ouverture des données du NONNA')
+# 3.a) Limite du NonNa :
+xmin_nona = -69.58
+xmax_nona = -69.55
+ymin_nona = 47.835
+ymax_nona = 47.860
+
+# 3.b) Ouverture des données :
 nonna_filename = '../2_Donnees_entrantes/NONNA/RDL_NONNA10_MTM7_CGVD28_FZ.csv'
 nonna_ds = pd.read_csv(nonna_filename,
                        header=0,
@@ -233,39 +246,42 @@ nonna_ds = pd.read_csv(nonna_filename,
 nonna_ds = nonna_ds.set_index(ID = ['Easting','Northing'])
 nonna_ds['CGVD28'] = nonna_ds['Depth CGVD28']
 nonna_da = nonna_ds['CGVD28']
+del nonna_ds
 
-# 3.b) On limite les frontières des données NONNA pour limiter l'interpolation : 
-nonna_da = nonna_da.where(nonna_da.longitude<-69.555).where(nonna_da.longitude>lonmin)
-nonna_da = nonna_da.where(nonna_da.latitude<latmax ).where(nonna_da.latitude>47.8275).dropna('ID').drop(['longitude','latitude'])
+# 3.c) Découpage des données :
+nonna_da = nonna_da.where(nonna_da.longitude<xmax_nona).where(nonna_da.longitude>xmin_nona)
+nonna_da = nonna_da.where(nonna_da.latitude <ymax_nona).where(nonna_da.latitude >ymin_nona)
+nonna_da = nonna_da.dropna('ID').drop(['longitude','latitude'])
 
 
 # 4. Ouverture des données LIDAR (déjà en MTM7) :
 print('4 :: Ouverture des données LIDAR')
-lidar_path = '../5_Donnees_sortantes/Netcdf/'
+lidar_path = '../2_Donnees_entrantes/LiDAR_bathymetrique/Netcdf/'
 lidar_pointe_file = lidar_path + 'topographie_lidar_pointe_de_RdL.nc'
 lidar_cote_s_file = lidar_path + 'topographie_lidar_cote_sud.nc'
 ds_lidarp = xr.open_dataset(lidar_pointe_file)
 ds_lidarc = xr.open_dataset(lidar_cote_s_file)
-
-da_lidarp = sharpening_ds(ds_lidarp)
-da_lidarc = sharpening_ds(ds_lidarc)
+da_lidarp = sharpening_ds(ds_lidarp,nz=2)
+da_lidarc = sharpening_ds(ds_lidarc,nz=2)
 del ds_lidarp, ds_lidarc
 
 
 # 5. Ouvertude des données multifaisceaux (Fonction)
 # 5.a) Ouverture des données multifaisceaux (Rivière)
 print('5 :: Ouverture des données multifaisceaux')
-filename = '/home/charles-edouard/Desktop/Traitement_RdL/2_Donnees_entrantes/Multifaisceaux/' + 'riviere_25cm_CSRS_MTM7_HT20.nc'
+filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'riviere_25cm_CSRS_MTM7_HT20.nc'
 dataname = 'riviere_25cm_CSRS_MTM7_HT20'
 riviere_da = process_multifaisceaux(filename,dataname,1)
 
+"""
 # 5.b) Ouverture des données multifaisceaux (Large)
-filename = '/home/charles-edouard/Desktop/Traitement_RdL/2_Donnees_entrantes/Multifaisceaux/' + 'explo_large_25cm_CSRS_MTM7_HT20.nc'
+filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'explo_large_25cm_CSRS_MTM7_HT20.nc'
 dataname = 'explo_large_25cm_CSRS_MTM7_HT20'
 large_da = process_multifaisceaux(filename,dataname,2)
+"""
 
 # 5.c) Ouverture des données multifaisceaux (baie)
-filename = '/home/charles-edouard/Desktop/Traitement_RdL/2_Donnees_entrantes/Multifaisceaux/' + 'aoi_50cm_CSRS_MTM7_HT20.nc'
+filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'aoi_50cm_CSRS_MTM7_HT20.nc'
 dataname = 'aoi_50cm_CSRS_MTM7_HT20'
 baie_da = process_multifaisceaux(filename,dataname,2)
 
@@ -274,6 +290,7 @@ baie_da = process_multifaisceaux(filename,dataname,2)
 
 # ==== DÉBIAISAGE ==== :
 # --- Calcul du biais (mode)
+print('6 :: Calcul du biais')
 b_drone_lidar = debiaisage(drone_da,xr.concat([da_lidarc,da_lidarp],'ID'), radius = -50, texte = 'Biais drone/lidar')
 b_hydro_drone = debiaisage(drone_da,hydro_da,texte = 'Biais drone/hydro')
 b_hydro_baie  = debiaisage(baie_da,hydro_da, texte = 'Biais multibaie/hydro')
@@ -283,30 +300,30 @@ b_drone_nonna = debiaisage(drone_da,nonna_da, texte = 'Biais drone/nonna')
 
 
 # ==== DÉCOUPAGES ==== :
-# --- Découpage NONNA en fonction des autres jeux de données
-# --- Calcul des indices d'intersection des polygones, radius = 50,
-#     on coupe large...
+# --- Suppression des données du Nonna aux intersections avec les jeux de données
+#     du multifaisceaux et du drone : 
 print('Correction NONNA')
 index4,xy_intersection, xcontour, ycontour = index_intersection_dataset(baie_da, nonna_da, radius=50)
 index5,xy_intersection, xcontour, ycontour = index_intersection_dataset(drone_da, nonna_da, radius=50)
 intersection_id = np.sort(np.concatenate([index4[0],index5[0]]))
 index_corrige = range(len(nonna_da))
 index_corrige = np.delete(index_corrige,intersection_id)
-nonna_da = nonna_da[index_corrige] # NONNA est découpé.
+nonna_da = nonna_da[index_corrige]
 
 # --- Découpage des données drone avec la fonction extract_polygon et les
-#     shapefile de traits de côte.
+#     shapefile de traits de côte du LIDAR.
 print('Découpage des traits de côte LIDAR')
 print('Découpage 1')
-drone_da = extract_polygon(drone_da, shapefile = polygon_path + 'Trait_de_cote_pointe_RdL/Polygone_LIDAR_pointe_de_RdL.shp')
+drone_da = extract_polygon(drone_da, shapefile = polygon_path + 'Trait_de_cote_pointe_RdL/polygone_LiDAR_bathymetrique_pointe_RdL.shp')
 print('Découpage 2')
-drone_da = extract_polygon(drone_da, shapefile = polygon_path + 'Trait_de_cote_cote_sud/MTM7/polygone_18avril2022_MTM7_cote_sud.shp')
+drone_da = extract_polygon(drone_da, shapefile = polygon_path + 'Trait_de_cote_cote_sud/polygone_cote_sud_LiDAR_bathymetrique.shp')
 
 
 
-# 6. On fusionne finalement toutes les DataArray ensemble.
+
+# ==== FUSION FINALE DES DONNÉES PRÉ-INTERPOLATION ====
 print('6 :: Fusion des données pré-interpolation')
-
+#nonna_da = nonna_da.drop(['latitude','longitude'])
 da = xr.concat([drone_da,
                 baie_da - (b_hydro_baie - b_hydro_drone),
                 hydro_da - b_hydro_drone,
@@ -320,10 +337,7 @@ da = xr.concat([drone_da,
 
 
 
-
-
-
-# ==== INTERPOLATION ====
+# ==== INTERPOLATION FINALE ====
 print('INTERPOLATION')
 gridz = griddata(list(zip(da.Easting.values,
                           da.Northing.values)),
@@ -333,27 +347,24 @@ gridz = griddata(list(zip(da.Easting.values,
 
 if __name__ == "__main__":
 
-    # ==== FIGURE ====
-    import finalfig
-
-
-    """
     # ==== SAVING DATA IN NETCDF FORMAT ====
     topobathy_da = xr.DataArray(gridz,
-    coords = {'xmtm7':xdomain,
-    'ymtm7':ydomain},
-    dims = ['xmtm7','ymtm7'],
-    attrs = {'name':'topobathy',
-    'long_name':'Topobathymétrie RdL',
-    'units':'meters (m)',
-    'processus':"Interpolation linéaire depuis Nonna, Drone, Hydrobole et radar multifaisceau. La pointe de RdL est remplie de valeurs ficitve pour améliorer l'interpolation",
-    'coords_system':'MTM7 (NAD83[CSRS])',
-    'ellipsoide':'CGVD28'})
-    
-    path = '/home/charles-edouard/Desktop/Traitement_RdL/5_Donnees_sortantes/'
-    netcdf_name = path + 'interpolation_lowres.nc'
-    xr.Dataset({'topobathy':topobathy_da,
-    'spatial_ref':drone_spatial_ref},
-    attrs=topobathy_da.attrs).to_netcdf(netcdf_name)
-    """
+                                coords = {'xmtm7':xdomain,
+                                          'ymtm7':ydomain},
+                                dims = ['xmtm7','ymtm7'],
+                                attrs = {'name':'topobathy',
+                                         'long_name':'Topobathymétrie RdL high resolution',
+                                         'units':'meters (m)',
+                                         'processus':"Interpolation linéaire high",
+                                         'coords_system':'MTM7 (NAD83[CSRS])',
+                                         'ellipsoide':'CGVD28'})
 
+    path = 'Topobathymetrie_finale/'
+    netcdf_name = path + 'interpolation_highres.nc'
+    xr.Dataset({'topobathy':topobathy_da,
+                'spatial_ref':drone_spatial_ref},
+               attrs=topobathy_da.attrs).to_netcdf(netcdf_name)
+
+
+    
+    
