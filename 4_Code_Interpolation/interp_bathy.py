@@ -22,7 +22,8 @@ import geopandas as gpd
 
 
 # ==== CREATION DES SYSTÈMES DE COORDONNÉES ====
-MTM7crs  = cepsg._EPSGProjection(32187)   # Projection MTM7
+#MTM7crs  = cepsg._EPSGProjection(32187)   # Projection MTM7
+MTM7crs  = cepsg._EPSGProjection(2949)   # Projection MTM7
 PlateCarree = ccrs.PlateCarree()         # Projection Mercator
 Orthographic = ccrs.Orthographic(-60,47) # Projection Orthographique
 transformer_toMTM = Transformer.from_crs(PlateCarree,MTM7crs)
@@ -31,19 +32,27 @@ transformer_toMTM = Transformer.from_crs(PlateCarree,MTM7crs)
 
 # ==== CRÉATION GRILLE SOUS-JACENTE À L'INTERPOLATION ====
 # --- Limites
-lonmin = -69.580
+lonmin = -69.610
 lonmax = -69.546
 latmin =  47.825
 latmax =  47.860
 extent = [lonmin, lonmax, latmin, latmax]
 
-# Tranformation des limites en MTM7
+# Tranformation des limites depuis UTM vers MTM7
 xmin,ymin = transformer_toMTM.transform(lonmin,latmin)
 xmax,ymax = transformer_toMTM.transform(lonmax,latmax)
 
-# Création meshgrid sous-tendant l'interpolation : 
+# Création meshgrid sous-tendant l'interpolation ::
+# On prend la même grille que les drone, mais étendue.
 xdomain = np.linspace(int(xmin),int(xmax),2*(int(xmax)-int(xmin))+1)
 ydomain = np.linspace(int(ymin),int(ymax),2*(int(ymax)-int(ymin))+1)
+
+# On limite la taille du domaine pour réduire la taille de l'interpolation
+midID   = int(2*len(xdomain)/4) # Au 2/3
+xdomain = np.concatenate([xdomain[:midID:3],xdomain[midID:]],0) # On prend 1/4 points à l'ouest
+ydomain = ydomain
+
+# Création de la meshgrid sous-tendant l'interpolation
 X,Y = np.meshgrid(xdomain,ydomain,indexing='ij')
 
 
@@ -231,28 +240,59 @@ del hydro_ds
 # 3 On ouvre les données du NONNA (Format CSV) :
 print('3 :: Ouverture des données du NONNA')
 # 3.a) Limite du NonNa :
-xmin_nona = -69.58
+xmin_nona = -69.61
 xmax_nona = -69.55
-ymin_nona = 47.835
+ymin_nona = 47.825
 ymax_nona = 47.860
 
 # 3.b) Ouverture des données :
-nonna_filename = '../2_Donnees_entrantes/NONNA/RDL_NONNA10_MTM7_CGVD28_FZ.csv'
-nonna_ds = pd.read_csv(nonna_filename,
+"""
+nonna2_filename = '../2_Donnees_entrantes/NONNA/RDL_NONNA10_MTM7_CGVD28_FZ.csv'
+nonna2_ds = pd.read_csv(nonna2_filename,
                        header=0,
                        index_col=0,
                        sep=";").to_xarray().set_coords(['latitude','longitude',
                                                         'Easting' ,'Northing'])
-nonna_ds = nonna_ds.set_index(ID = ['Easting','Northing'])
-nonna_ds['CGVD28'] = nonna_ds['Depth CGVD28']
-nonna_da = nonna_ds['CGVD28']
+nonna2_ds = nonna2_ds.set_index(ID = ['Easting','Northing'])
+nonna2_ds['CGVD28'] = nonna2_ds['Depth CGVD28']
+nonna2_da = nonna2_ds['CGVD28']
+del nonna2_ds
+
+nonna2_da = nonna2_da.where(nonna2_da.longitude<xmax_nona).where(nonna2_da.longitude>xmin_nona)
+nonna2_da = nonna2_da.where(nonna2_da.latitude <ymax_nona).where(nonna2_da.latitude >ymin_nona)
+"""
+
+
+nonna_filename = '../2_Donnees_entrantes/NONNA/NetCDF/NONNA10_extended.nc'
+nonna_ds = xr.open_dataset(nonna_filename).isel(band = 0).drop('band')
+nonna_ds = nonna_ds.rename({'x':'longitude','y':'latitude'})
+nonna_ds = nonna_ds.stack(ID=('longitude','latitude'))
+
+
+xmtm7, ymtm7 = transformer_toMTM.transform(nonna_ds.longitude,
+                                           nonna_ds.latitude)
+nonna_ds = nonna_ds.assign_coords({'Easting' : ('ID',xmtm7),
+                                   'Northing': ('ID',ymtm7),
+                                   })
+#nonna_da = nonna_ds.swap_dims({'station':'ID'}).drop('station')['band_data']
+nonna_da = nonna_ds['band_data']
 del nonna_ds
+
+# Correction Niveau moyen -> CGVD28 (Works fine. Prise de l'écart des marées)
+nonna_da = nonna_da - 2.75 
+
 
 # 3.c) Découpage des données :
 nonna_da = nonna_da.where(nonna_da.longitude<xmax_nona).where(nonna_da.longitude>xmin_nona)
 nonna_da = nonna_da.where(nonna_da.latitude <ymax_nona).where(nonna_da.latitude >ymin_nona)
-nonna_da = nonna_da.dropna('ID').drop(['longitude','latitude'])
-
+nonna_da = nonna_da.dropna('ID').drop(['longitude','latitude']).dropna('ID')
+nonna_da = nonna_da.set_index(ID = ['Easting','Northing'])
+"""
+fig,axes = plt.subplots(ncols=2)
+axes[0].scatter(nonna_da.Easting,nonna_da.Northing,c = nonna_da.values,vmin=-10,vmax=10)
+axes[1].scatter(nonna2_da.Easting,nonna2_da.Northing,c = nonna2_da.values,vmin=-10,vmax=10)
+plt.show()
+"""
 
 # 4. Ouverture des données LIDAR (déjà en MTM7) :
 print('4 :: Ouverture des données LIDAR')
@@ -273,12 +313,12 @@ filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'riviere_25cm_CSRS_MTM7_HT
 dataname = 'riviere_25cm_CSRS_MTM7_HT20'
 riviere_da = process_multifaisceaux(filename,dataname,1)
 
-"""
+
 # 5.b) Ouverture des données multifaisceaux (Large)
 filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'explo_large_25cm_CSRS_MTM7_HT20.nc'
 dataname = 'explo_large_25cm_CSRS_MTM7_HT20'
 large_da = process_multifaisceaux(filename,dataname,2)
-"""
+
 
 # 5.c) Ouverture des données multifaisceaux (baie)
 filename = '../2_Donnees_entrantes/Multifaisceaux/' + 'aoi_50cm_CSRS_MTM7_HT20.nc'
@@ -330,10 +370,11 @@ da = xr.concat([drone_da,
                 da_lidarc - b_drone_lidar,
                 da_lidarp - b_drone_lidar,
                 nonna_da - b_drone_nonna,
-                riviere_da
+                riviere_da,
+                large_da
                 ],'ID').dropna('ID')
 
-#                large_da,
+
 
 
 
@@ -355,7 +396,7 @@ if __name__ == "__main__":
                                 attrs = {'name':'topobathy',
                                          'long_name':'Topobathymétrie RdL high resolution',
                                          'units':'meters (m)',
-                                         'processus':"Interpolation linéaire high",
+                                         'processus':"Interpolation linéaire",
                                          'coords_system':'MTM7 (NAD83[CSRS])',
                                          'ellipsoide':'CGVD28'})
 

@@ -13,19 +13,26 @@ from dask.diagnostics import ProgressBar
 # --- Chemins fichiers entrant ::
 path_drone = '../2_Donnees_entrantes/Topobathy_drone/'
 file_drone = 'RDL_20220418_10CM_bonnnn.tif'
+
 path_lidar = '../2_Donnees_entrantes/LiDAR_bathymetrique/'
 file_lidar1 = 'Raster_Pointe_RdL_LiDAR_bathymetrique.tif'
 file_lidar2 = 'Raster_Cote_sud_LiDAR_bathymetrique.tif'
 
+path_nonna = '../2_Donnees_entrantes/NONNA/'
+file_nonna = 'NONNA10_extended.tif'
+
 # --- Chemins fichiers sortant ::
 output_path_lidar  = '../2_Donnees_entrantes/LiDAR_bathymetrique/Netcdf/'
 output_path_drone  = '../2_Donnees_entrantes/Topobathy_drone/Netcdf/'
+output_path_nonna  = '../2_Donnees_entrantes/NONNA/NetCDF/'
 #
 outfile_drone = 'topobathymetrie_drone.nc'
 outfile_pointe = 'topographie_lidar_pointe_de_RdL.nc'
 outfile_cote_s = 'topographie_lidar_cote_sud.nc'
+outfile_nonna   = 'NONNA10_extended.nc'
 
 # --- Opérations ::
+da_NONNA = xr.open_dataarray(path_nonna  + file_nonna,  engine = 'rasterio', chunks='auto')
 da_drone = xr.open_dataarray(path_drone  + file_drone,  engine = 'rasterio', chunks='auto')
 da_lidar1 = xr.open_dataarray(path_lidar + file_lidar1, engine = 'rasterio', chunks='auto')
 da_lidar2 = xr.open_dataarray(path_lidar + file_lidar2, engine = 'rasterio', chunks='auto')
@@ -33,12 +40,18 @@ print('Ouverture des fichier :: {},{} et {}'.format(file_drone,
                                                     file_lidar1,
                                                     file_lidar2))
 #
+write_job_NONNA = da_NONNA.to_netcdf(output_path_nonna   + outfile_nonna,  compute = False)
 write_job_drone = da_drone.to_netcdf(output_path_drone   + outfile_drone,  compute = False)
 write_job_lidar1 = da_lidar1.to_netcdf(output_path_lidar + outfile_pointe, compute = False)
 write_job_lidar2 = da_lidar2.to_netcdf(output_path_lidar + outfile_cote_s, compute = False)
 
+# --- Writing tif files as xarray/netcdf for processing ::
 with ProgressBar():
-    print("Écriture vers {}".format(output_path_lidar + outfile_drone))
+    print("Écriture vers {}".format(output_path_nonna + outfile_nonna))
+    write_job_NONNA.compute()
+
+with ProgressBar():
+    print("Écriture vers {}".format(output_path_drone + outfile_drone))
     write_job_drone.compute()
 
 with ProgressBar():

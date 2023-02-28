@@ -14,7 +14,7 @@ ds = ds.stack(ID=('xmtm7','ymtm7')).dropna('ID')
 xpoints = ds.xmtm7.values
 ypoints = ds.ymtm7.values
 zpoints = ds.topobathy.values
-midID = int(len(xpoints)/3)
+midID = int(2*len(xpoints)/3)
 topo_array1 = np.concatenate( [[xpoints[:midID:2]],
                                [ypoints[:midID:2]],
                                [zpoints[:midID:2]]],0).transpose()
@@ -33,3 +33,6 @@ np.savetxt(path_str + 'topobathy3.xyz',topo_array3,delimiter=' ')
 
 topo_fusion = np.concatenate([topo_array1,topo_array2,topo_array3], 0)
 np.savetxt(path_str + 'topobathy_limited.xyz',topo_fusion,delimiter=' ')
+
+topo_fusion2 = -1*np.concatenate([topo_array1,topo_array2,topo_array3], 0)
+np.savetxt(path_str + 'bathymetry_limited.xyz',topo_fusion2,delimiter=' ')
