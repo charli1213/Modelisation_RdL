@@ -6,8 +6,8 @@ annaconda "gridmaking" dans 1_Conda_Environments.
 
 Les données entrantes nécessaires à la création d'une topobathymétrie se retrouvent dans 
 2_Donnees_entrantes
-*** N.B. Toutes les données entrantes sont trop grandes pour gitHUB. Charles-Édouard devrait les avoir ce fichier dans ses données personnelles.
-
+*** N.B. Toutes les données entrantes sont trop grandes pour gitHUB. Charles-Édouard devrait les avoir ce fichier dans ses données personnelles. Sinon, on peut els retrouver sur le serveur Labo-Didier au :
+"labo-didier/03_RDL_MTQ/21_MOD_DELFT3d_CELizotte/2_Donnees_entrantes"
 
 Le dossier 3_Code_Grid_creation recoupe tous les codes necessaires à la création d'une grille
 orthogonale curvilinéaire.
